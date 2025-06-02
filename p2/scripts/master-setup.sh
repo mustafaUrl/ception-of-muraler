@@ -13,7 +13,3 @@ mkdir -p /home/vagrant/.kube
 cp /etc/rancher/k3s/k3s.yaml /home/vagrant/.kube/config
 
 kubectl create -f /home/vagrant/deployment.yaml -f /home/vagrant/service.yaml -f /home/vagrant/ingress.yaml
-
-echo "192.168.56.110 app1.com" | sudo tee -a "/etc/hosts"
-echo "192.168.56.110 app2.com" | sudo tee -a "/etc/hosts"
-echo "192.168.56.110 app3.com" | sudo tee -a "/etc/hosts"
