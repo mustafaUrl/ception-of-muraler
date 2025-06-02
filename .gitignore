@@ -1,1 +1,6 @@
-.vagrant
+.DS_Store
+p1/.vagrant
+p1/node-token
+p1/.DS_Store
+p2/.vagrant
+p2/.DS_Store
