@@ -14,9 +14,16 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: uraler/sys-info:latest
+        image: nginx:alpine
         ports:
-        - containerPort: 5000
+        - containerPort: 80
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html
+        configMap:
+          name: app-one-html
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -34,9 +41,16 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: uraler/sys-info:latest
+        image: nginx:alpine
         ports:
-        - containerPort: 5000
+        - containerPort: 80
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html
+        configMap:
+          name: app-two-html
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,6 +68,13 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: uraler/sys-info:latest
+        image: nginx:alpine
         ports:
-        - containerPort: 5000
+        - containerPort: 80
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html
+        configMap:
+          name: app-three-html
