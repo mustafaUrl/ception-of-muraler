@@ -14,9 +14,9 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: uraler/sys-info:latest
+        image: paulbouwer/hello-kubernetes:1.5
         ports:
-        - containerPort: 5000
+        - containerPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -34,9 +34,9 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: uraler/sys-info:latest
+        image: paulbouwer/hello-kubernetes:1.5
         ports:
-        - containerPort: 5000
+        - containerPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,6 +54,6 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: uraler/sys-info:latest
+        image: paulbouwer/hello-kubernetes:1.5
         ports:
-        - containerPort: 5000
+        - containerPort: 8080
