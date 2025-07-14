@@ -6,6 +6,7 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
+# Helper function to install a tool
 function install_tool() {
     local tool_name=$1
     local install_cmd=$2
@@ -23,6 +24,7 @@ function install_tool() {
     fi
 }
 
+# Helper function to uninstall a tool
 function uninstall_tool() {
     local tool_name=$1
     local uninstall_cmd=$2
@@ -35,6 +37,8 @@ function uninstall_tool() {
         return 1 # Indicate failure
     fi
 }
+
+# --- Tool-Specific Functions ---
 
 function install_curl() {
     install_tool "curl" "sudo apt update -y && sudo apt install -y curl" "curl --version"
@@ -141,29 +145,6 @@ function uninstall_docker() {
 }
 
 
-function install_k3d() {
-    echo -e "${GREEN}Installing k3d...${NC}"
-    # Install k3d from its official script
-    if curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash; then
-        echo -e "${GREEN}k3d installed successfully!${NC}"
-        k3d --version || echo -e "${YELLOW}k3d version command failed. Please check installation.${NC}"
-    else
-        echo -e "${RED}Failed to install k3d.${NC}"
-        return 1
-    fi
-}
-
-function uninstall_k3d() {
-    echo -e "${RED}Uninstalling k3d...${NC}"
-    # k3d's uninstallation is usually just removing the binary if installed via script
-    if [ -f /usr/local/bin/k3d ]; then
-        sudo rm -f /usr/local/bin/k3d
-        echo -e "${GREEN}k3d uninstalled successfully!${NC}"
-    else
-        echo -e "${YELLOW}k3d not found in /usr/local/bin. It might not be installed or is in a different location.${NC}"
-    fi
-}
-
 function install_argocd() {
     echo -e "${GREEN}Installing Argo CD CLI...${NC}"
     if sudo curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && \
@@ -252,42 +233,29 @@ function uninstall_virtualbox() {
 
 
 function install_vagrant() {
-    echo -e "${GREEN}Installing Vagrant...${NC}"
-    # Robustly find the latest Vagrant .deb package URL
-    # This uses jq for more reliable JSON parsing. If jq isn't installed, it falls back to grep/cut.
-    local LATEST_VAGRANT_URL
-    if command -v jq &>/dev/null; then
-        LATEST_VAGRANT_URL=$(curl -s https://api.github.com/repos/hashicorp/vagrant/releases/latest | jq -r '.assets[] | select(.name | ends_with("_linux_amd64.deb")) | .browser_download_url' | head -n 1)
+    echo -e "${GREEN}Installing Vagrant from HashiCorp APT repository...${NC}"
+
+    # Add HashiCorp GPG key
+    if wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg; then
+        echo -e "${GREEN}HashiCorp GPG key added.${NC}"
     else
-        echo -e "${YELLOW}jq not found. Falling back to less robust URL parsing for Vagrant. Consider installing jq (sudo apt install -y jq).${NC}"
-        LATEST_VAGRANT_URL=$(curl -s https://api.github.com/repos/hashicorp/vagrant/releases/latest | grep "browser_download_url.*_linux_amd64.deb" | sed -E 's/.*"([^"]+)".*/\1/' | head -n 1)
-    fi
-
-
-    if [ -z "$LATEST_VAGRANT_URL" ]; then
-        echo -e "${RED}Could not find the latest Vagrant .deb package URL. Aborting installation.${NC}"
+        echo -e "${RED}Failed to add HashiCorp GPG key. Aborting Vagrant installation.${NC}"
         return 1
     fi
 
-    echo "Downloading Vagrant from: $LATEST_VAGRANT_URL"
-    mkdir -p /tmp/vagrant_install
-    cd /tmp/vagrant_install || { echo -e "${RED}Failed to create/enter temporary directory for Vagrant. Aborting.${NC}"; return 1; }
+    # Add HashiCorp APT repository
+    local UBUNTU_CODENAME=$(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs)
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $UBUNTU_CODENAME main" | sudo tee /etc/apt/sources.list.d/hashicorp.list > /dev/null
+    echo -e "${GREEN}HashiCorp APT repository added.${NC}"
 
-    if curl -sSL -o vagrant.deb "$LATEST_VAGRANT_URL"; then
-        if sudo apt install -y ./vagrant.deb; then
-            echo -e "${GREEN}Vagrant installed successfully!${NC}"
-            vagrant --version || echo -e "${YELLOW}Vagrant version command failed. Please check installation.${NC}"
-        else
-            echo -e "${RED}Failed to install Vagrant .deb package.${NC}"
-            return 1
-        fi
+    sudo apt update -y
+    if sudo apt install -y vagrant; then
+        echo -e "${GREEN}Vagrant installed successfully!${NC}"
+        vagrant --version || echo -e "${YELLOW}Vagrant version command failed. Please check installation.${NC}"
     else
-        echo -e "${RED}Failed to download Vagrant .deb package.${NC}"
+        echo -e "${RED}Failed to install Vagrant from repository.${NC}"
         return 1
     fi
-
-    cd - > /dev/null # Go back to the previous directory
-    rm -rf /tmp/vagrant_install # Clean up temp files
 }
 
 function uninstall_vagrant() {
@@ -295,84 +263,88 @@ function uninstall_vagrant() {
     sudo apt purge -y vagrant 2>/dev/null
     sudo apt autoremove -y --purge
 
-    echo -e "${RED}Removing residual Vagrant configuration and data...${NC}"
+    echo -e "${RED}Removing residual Vagrant configuration, data, and HashiCorp repository...${NC}"
     # Vagrant stores boxes and configs in ~/.vagrant.d
     rm -rf ~/.vagrant.d 2>/dev/null && echo -e "${GREEN}Removed ~/.vagrant.d directory.${NC}" || echo -e "${YELLOW}Failed to remove ~/.vagrant.d or directory not found.${NC}"
+
+    # Remove HashiCorp repository and keyring
+    sudo rm -f /etc/apt/sources.list.d/hashicorp.list 2>/dev/null
+    sudo rm -f /usr/share/keyrings/hashicorp-archive-keyring.gpg 2>/dev/null
+    echo -e "${GREEN}HashiCorp repository and GPG key removed.${NC}"
 
     echo -e "${GREEN}Vagrant uninstallation attempt completed.${NC}"
 }
 
+# --- Menu Display Function ---
+function show_main_menu() {
+    echo "" # Empty line for spacing
+    echo "--- Ubuntu Development Tools Manager ---"
+    echo "Please choose an action for the following tools:"
+    echo "  1) Curl  "
+    echo "  2) Git  "
+    echo "  3) Docker  "
+    echo "  4) Argo CD CLI  "
+    echo "  5) VirtualBox  "
+    echo "  6) Vagrant  "
+    echo "  7) Exit"
+}
 
-# Main menu
-echo "Welcome to the Ubuntu Development Tools Manager!"
-echo "Please choose an action for the following tools:"
-echo "  1) Install/Uninstall **curl**"
-echo "  2) Install/Uninstall **git**"
-echo "  3) Install/Uninstall **Docker**"
-echo "  4) Install/Uninstall **k3d**"
-echo "  5) Install/Uninstall **Argo CD CLI**"
-echo "  6) Install/Uninstall **VirtualBox**"
-echo "  7) Install/Uninstall **Vagrant**"
-echo "  8) Exit"
+# --- Sub-menu and Action Handler Function ---
+function handle_tool_action() {
+    local tool_name=$1
+    local install_func=$2
+    local uninstall_func=$3
 
-read -p "Enter your choice (1-8): " main_choice
+    while true; do
+        echo "" # Empty line for spacing
+        echo "--- Choose an action for $tool_name: ---"
+        echo "  1) Install"
+        echo "  2) Uninstall"
+        echo "  9) Go Back (Main Menu)"
+        echo "  0) Exit Script"
+        read -p "Enter your choice (1/2/9/0): " sub_choice
 
-case "$main_choice" in
-    1)
-        echo "Choose an action for curl:"
-        echo "  1) Install curl"
-        echo "  2) Uninstall curl"
-        read -p "Enter your choice (1/2): " sub_choice
-        if [ "$sub_choice" == "1" ]; then install_curl; elif [ "$sub_choice" == "2" ]; then uninstall_curl; else echo -e "${RED}Invalid choice.${NC}"; fi
-        ;;
-    2)
-        echo "Choose an action for git:"
-        echo "  1) Install git"
-        echo "  2) Uninstall git"
-        read -p "Enter your choice (1/2): " sub_choice
-        if [ "$sub_choice" == "1" ]; then install_git; elif [ "$sub_choice" == "2" ]; then uninstall_git; else echo -e "${RED}Invalid choice.${NC}"; fi
-        ;;
-    3)
-        echo "Choose an action for Docker:"
-        echo "  1) Install Docker"
-        echo "  2) Uninstall Docker"
-        read -p "Enter your choice (1/2): " sub_choice
-        if [ "$sub_choice" == "1" ]; then install_docker; elif [ "$sub_choice" == "2" ]; then uninstall_docker; else echo -e "${RED}Invalid choice.${NC}"; fi
-        ;;
-    4)
-        echo "Choose an action for k3d:"
-        echo "  1) Install k3d"
-        echo "  2) Uninstall k3d"
-        read -p "Enter your choice (1/2): " sub_choice
-        if [ "$sub_choice" == "1" ]; then install_k3d; elif [ "$sub_choice" == "2" ]; then uninstall_k3d; else echo -e "${RED}Invalid choice.${NC}"; fi
-        ;;
-    5)
-        echo "Choose an action for Argo CD CLI:"
-        echo "  1) Install Argo CD CLI"
-        echo "  2) Uninstall Argo CD CLI"
-        read -p "Enter your choice (1/2): " sub_choice
-        if [ "$sub_choice" == "1" ]; then install_argocd; elif [ "$sub_choice" == "2" ]; then uninstall_argocd; else echo -e "${RED}Invalid choice.${NC}"; fi
-        ;;
-    6)
-        echo "Choose an action for VirtualBox:"
-        echo "  1) Install VirtualBox"
-        echo "  2) Uninstall VirtualBox"
-        read -p "Enter your choice (1/2): " sub_choice
-        if [ "$sub_choice" == "1" ]; then install_virtualbox; elif [ "$sub_choice" == "2" ]; then uninstall_virtualbox; else echo -e "${RED}Invalid choice.${NC}"; fi
-        ;;
-    7)
-        echo "Choose an action for Vagrant:"
-        echo "  1) Install Vagrant"
-        echo "  2) Uninstall Vagrant"
-        read -p "Enter your choice (1/2): " sub_choice
-        if [ "$sub_choice" == "1" ]; then install_vagrant; elif [ "$sub_choice" == "2" ]; then uninstall_vagrant; else echo -e "${RED}Invalid choice.${NC}"; fi
-        ;;
-    8)
-        echo "Exiting the script. Goodbye!"
-        exit 0
-        ;;
-    *)
-        echo -e "${RED}Invalid main choice. Please enter a number between 1 and 8.${NC}"
-        exit 1
-        ;;
-esac
+        case "$sub_choice" in
+            1)
+                $install_func
+                break # Exit sub-menu after action
+                ;;
+            2)
+                $uninstall_func
+                break # Exit sub-menu after action
+                ;;
+            9)
+                return # Go back to main menu
+                ;;
+            0)
+                echo -e "${YELLOW}Exiting the entire script. Goodbye!${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}Invalid choice. Please enter 1, 2, 9, or 0.${NC}"
+                ;;
+        esac
+    done
+}
+
+# --- Main Loop ---
+while true; do
+    show_main_menu
+    read -p "Enter your choice (1-7): " main_choice
+
+    case "$main_choice" in
+        1) handle_tool_action "curl" "install_curl" "uninstall_curl" ;;
+        2) handle_tool_action "git" "install_git" "uninstall_git" ;;
+        3) handle_tool_action "Docker" "install_docker" "uninstall_docker" ;;
+        4) handle_tool_action "Argo CD CLI" "install_argocd" "uninstall_argocd" ;;
+        5) handle_tool_action "VirtualBox" "install_virtualbox" "uninstall_virtualbox" ;;
+        6) handle_tool_action "Vagrant" "install_vagrant" "uninstall_vagrant" ;;
+        7)
+            echo -e "${YELLOW}Exiting the entire script. Goodbye!${NC}"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Invalid main menu choice. Please enter a number between 1 and 7.${NC}"
+            ;;
+    esac
+done
