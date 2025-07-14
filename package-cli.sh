@@ -275,18 +275,51 @@ function uninstall_vagrant() {
     echo -e "${GREEN}Vagrant uninstallation attempt completed.${NC}"
 }
 
+# --- K3d Functions (New) ---
+
+function install_k3d() {
+    echo -e "${GREEN}Installing k3d...${NC}"
+    # Install k3d from its official script
+    if curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash; then
+        echo -e "${GREEN}k3d installed successfully!${NC}"
+        k3d --version || echo -e "${YELLOW}k3d version command failed. Please check installation.${NC}"
+    else
+        echo -e "${RED}Failed to install k3d.${NC}"
+        return 1
+    fi
+}
+
+function uninstall_k3d() {
+    echo -e "${RED}Uninstalling k3d...${NC}"
+    # k3d's uninstallation is usually just removing the binary if installed via script
+    if [ -f /usr/local/bin/k3d ]; then
+        sudo rm -f /usr/local/bin/k3d
+        echo -e "${GREEN}k3d uninstalled successfully!${NC}"
+    else
+        echo -e "${YELLOW}k3d not found in /usr/local/bin. It might not be installed or is in a different location.${NC}"
+    fi
+    # Also clean up any k3d-created Docker volumes/networks if they exist
+    echo -e "${YELLOW}Checking for and removing any k3d created Docker resources...${NC}"
+    docker volume ls -q -f "name=k3d-" | xargs -r docker volume rm 2>/dev/null
+    docker network ls -q -f "name=k3d-" | xargs -r docker network rm 2>/dev/null
+    echo -e "${GREEN}Attempted to remove k3d related Docker volumes and networks.${NC}"
+}
+
+
 # --- Menu Display Function ---
 function show_main_menu() {
     echo "" # Empty line for spacing
     echo "--- Ubuntu Development Tools Manager ---"
     echo "Please choose an action for the following tools:"
+    
     echo "  1) Curl  "
     echo "  2) Git  "
     echo "  3) Docker  "
-    echo "  4) Argo CD CLI  "
-    echo "  5) VirtualBox  "
-    echo "  6) Vagrant  "
-    echo "  7) Exit"
+    echo "  4) K3d (Kubernetes in Docker)  "
+    echo "  5) Argo CD CLI  "
+    echo "  6) VirtualBox  "
+    echo "  7) Vagrant  "
+    echo "  8) Exit"
 }
 
 # --- Sub-menu and Action Handler Function ---
@@ -330,21 +363,22 @@ function handle_tool_action() {
 # --- Main Loop ---
 while true; do
     show_main_menu
-    read -p "Enter your choice (1-7): " main_choice
+    read -p "Enter your choice (1-8): " main_choice # Range adjusted
 
     case "$main_choice" in
         1) handle_tool_action "curl" "install_curl" "uninstall_curl" ;;
         2) handle_tool_action "git" "install_git" "uninstall_git" ;;
         3) handle_tool_action "Docker" "install_docker" "uninstall_docker" ;;
-        4) handle_tool_action "Argo CD CLI" "install_argocd" "uninstall_argocd" ;;
-        5) handle_tool_action "VirtualBox" "install_virtualbox" "uninstall_virtualbox" ;;
-        6) handle_tool_action "Vagrant" "install_vagrant" "uninstall_vagrant" ;;
-        7)
+        4) handle_tool_action "k3d (Kubernetes in Docker)" "install_k3d" "uninstall_k3d" ;; # k3d action
+        5) handle_tool_action "Argo CD CLI" "install_argocd" "uninstall_argocd" ;;
+        6) handle_tool_action "VirtualBox" "install_virtualbox" "uninstall_virtualbox" ;;
+        7) handle_tool_action "Vagrant" "install_vagrant" "uninstall_vagrant" ;;
+        8) # Exit option
             echo -e "${YELLOW}Exiting the entire script. Goodbye!${NC}"
             exit 0
             ;;
         *)
-            echo -e "${RED}Invalid main menu choice. Please enter a number between 1 and 7.${NC}"
+            echo -e "${RED}Invalid main menu choice. Please enter a number between 1 and 8.${NC}" # Range adjusted
             ;;
     esac
 done
