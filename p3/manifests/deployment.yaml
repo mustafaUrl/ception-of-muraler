@@ -1,3 +1,4 @@
+# Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,3 +20,15 @@ spec:
         image: wil42/playground:v1
         ports:
         - containerPort: 8888
+        readinessProbe:                     # 👈 Endpoint için önemli
+          httpGet:
+            path: /
+            port: 8888
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:                      # 👈 Sağlık durumu için önemli
+          httpGet:
+            path: /
+            port: 8888
+          initialDelaySeconds: 5
+          periodSeconds: 10
