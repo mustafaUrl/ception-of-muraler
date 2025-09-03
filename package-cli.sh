@@ -56,6 +56,14 @@ function uninstall_git() {
     uninstall_tool "git" "sudo apt purge -y git && sudo apt autoremove -y"
 }
 
+function install_netstat() {
+    install_tool "net-tools" "sudo apt update -y && sudo apt install -y net-tools" "netstat --version"
+}
+
+function uninstall_netstat() {
+    uninstall_tool "net-tools" "sudo apt purge -y net-tools && sudo apt autoremove -y"
+}
+
 function install_docker() {
     echo -e "${GREEN}Installing Docker...${NC}"
 
@@ -319,7 +327,9 @@ function show_main_menu() {
     echo "  5) Argo CD CLI  "
     echo "  6) VirtualBox  "
     echo "  7) Vagrant  "
-    echo "  8) Exit"
+    echo "  8) netstat (net-tools)  "
+    echo "  9) Exit"
+ 
 }
 
 # --- Sub-menu and Action Handler Function ---
@@ -335,7 +345,7 @@ function handle_tool_action() {
         echo "  2) Uninstall"
         echo "  9) Go Back (Main Menu)"
         echo "  0) Exit Script"
-        read -p "Enter your choice (1/2/9/0): " sub_choice
+        read -p "Enter your choice (1/2/00/0): " sub_choice
 
         case "$sub_choice" in
             1)
@@ -346,7 +356,7 @@ function handle_tool_action() {
                 $uninstall_func
                 break # Exit sub-menu after action
                 ;;
-            9)
+            00)
                 return # Go back to main menu
                 ;;
             0)
@@ -354,7 +364,7 @@ function handle_tool_action() {
                 exit 0
                 ;;
             *)
-                echo -e "${RED}Invalid choice. Please enter 1, 2, 9, or 0.${NC}"
+                echo -e "${RED}Invalid choice. Please enter 1, 2, 00, or 0.${NC}"
                 ;;
         esac
     done
@@ -373,7 +383,8 @@ while true; do
         5) handle_tool_action "Argo CD CLI" "install_argocd" "uninstall_argocd" ;;
         6) handle_tool_action "VirtualBox" "install_virtualbox" "uninstall_virtualbox" ;;
         7) handle_tool_action "Vagrant" "install_vagrant" "uninstall_vagrant" ;;
-        8) # Exit option
+        8) handle_tool_action "netstat (net-tools)" "install_netstat" "uninstall_netstat" ;; # netstat action
+        9) # Exit option
             echo -e "${YELLOW}Exiting the entire script. Goodbye!${NC}"
             exit 0
             ;;

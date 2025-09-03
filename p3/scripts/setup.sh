@@ -3,6 +3,9 @@
 # K3D Cluster ve ArgoCD Setup Script
 # Bu script k3d cluster oluşturur ve ArgoCD'yi kurar
 
+
+ARGOCD_PORT=""
+PORT_FORWARD_PID=""
 set -e  # Hata durumunda scripti durdur
 
 echo "🚀 K3D Cluster ve ArgoCD kurulumu başlatılıyor..."
@@ -58,6 +61,7 @@ create_k3d_cluster() {
     echo -e "${GREEN}✅ K3D cluster oluşturuldu.${NC}"
 }
 
+
 # ArgoCD kurulumu
 install_argocd() {
    echo -e "${BLUE}📦 ArgoCD kuruluyor...${NC}"
@@ -80,6 +84,7 @@ install_argocd() {
    echo -e "${GREEN}✅ ArgoCD kuruldu ve yapılandırıldı.${NC}"
 }
 
+
 # ArgoCD şifresini al
 get_argocd_password() {
     echo -e "${BLUE}🔐 ArgoCD admin şifresi alınıyor...${NC}"
@@ -98,23 +103,76 @@ get_argocd_password() {
     echo -e "${BLUE}💾 Şifre 'argocd-password.txt' dosyasına kaydedildi.${NC}"
 }
 
-# Port forwarding başlat (arka planda)
+# Find available port
+find_available_port() {
+    local start_port=${1:-8081}
+    local max_port=$((start_port + 50))
+    
+    for port in $(seq $start_port $max_port); do
+        if ! lsof -i :$port >/dev/null 2>&1 && ! netstat -an | grep -q ":$port "; then
+            echo $port
+            return 0
+        fi
+    done
+    
+    echo -e "${RED}❌ No available port found between $start_port and $max_port${NC}" >&2
+    return 1
+}
+
 start_port_forward() {
-    echo -e "${BLUE}🌐 Port forwarding başlatılıyor...${NC}"
+    echo -e "${BLUE}🌐 Starting port forwarding...${NC}"
     
-    # Mevcut port forwarding'i durdur
+    # Stop existing port forwarding
     pkill -f "kubectl port-forward.*argocd-server" || true
+    sleep 2
     
-    # Yeni port forwarding başlat (arka planda)
-    kubectl port-forward svc/argocd-server -n argocd 8081:443 &
+    # Find available port
+    echo -e "${YELLOW}🔍 Looking for available port...${NC}"
+    ARGOCD_PORT=$(find_available_port 8081)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Could not find available port for ArgoCD${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✅ Using port: $ARGOCD_PORT${NC}"
+    
+    # Wait for ArgoCD server pod to be fully ready
+    echo -e "${YELLOW}⏳ Waiting for ArgoCD server pod to be ready...${NC}"
+    kubectl wait --for=condition=Ready --timeout=300s pod -l app.kubernetes.io/name=argocd-server -n argocd
+    
+    # Start new port forwarding (in background)
+    kubectl port-forward svc/argocd-server -n argocd $ARGOCD_PORT:443 > /dev/null 2>&1 &
     PORT_FORWARD_PID=$!
     
-    echo -e "${GREEN}✅ Port forwarding başlatıldı (PID: $PORT_FORWARD_PID)${NC}"
-    echo -e "${BLUE}🌍 ArgoCD UI: https://localhost:8081${NC}"
+    echo -e "${GREEN}✅ Port forwarding started (PID: $PORT_FORWARD_PID)${NC}"
+    echo -e "${BLUE}🌍 ArgoCD UI: https://localhost:$ARGOCD_PORT${NC}"
     
-    # Port forwarding'in hazır olmasını bekle
-    echo -e "${YELLOW}⏳ ArgoCD server'ın hazır olması bekleniyor...${NC}"
-    sleep 10
+    # Test connection
+    echo -e "${YELLOW}⏳ Testing ArgoCD server connection...${NC}"
+    local retries=0
+    local max_retries=30
+    
+    while [ $retries -lt $max_retries ]; do
+        if curl -k -s --connect-timeout 2 https://localhost:$ARGOCD_PORT >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ ArgoCD server is accessible on port $ARGOCD_PORT.${NC}"
+            return 0
+        fi
+        
+        # Check if port forward process is still running
+        if ! kill -0 $PORT_FORWARD_PID 2>/dev/null; then
+            echo -e "${RED}❌ Port forwarding process died. Restarting...${NC}"
+            kubectl port-forward svc/argocd-server -n argocd $ARGOCD_PORT:443 > /dev/null 2>&1 &
+            PORT_FORWARD_PID=$!
+        fi
+        
+        retries=$((retries + 1))
+        echo -e "${YELLOW}⏳ Attempt $retries/$max_retries - Waiting for ArgoCD server on port $ARGOCD_PORT...${NC}"
+        sleep 2
+    done
+    
+    echo -e "${RED}❌ Failed to establish stable connection to ArgoCD server on port $ARGOCD_PORT.${NC}"
+    return 1
 }
 
 # ArgoCD'ye giriş yap
@@ -250,28 +308,36 @@ setup_system() {
             
             echo -e "\n${GREEN}🎉 Setup completed!${NC}"
             echo -e "${BLUE}📋 Summary:${NC}"
-            echo -e "${BLUE}  • ArgoCD UI: https://localhost:8081${NC}"
+            echo -e "${BLUE}  • ArgoCD UI: https://localhost:$ARGOCD_PORT${NC}"
             echo -e "${BLUE}  • Username: admin${NC}"
             echo -e "${BLUE}  • Password: $ARGOCD_PASSWORD${NC}"
             echo -e "${BLUE}  • Password file: argocd-password.txt${NC}"
+            echo -e "${BLUE}  • Port used: $ARGOCD_PORT${NC}"
             echo -e "\n${YELLOW}💡 Port forwarding is running in background. Press Ctrl+C to stop.${NC}"
+            
+            # Save port info to file
+            echo "ARGOCD_PORT=$ARGOCD_PORT" > argocd-connection.txt
+            echo "ARGOCD_URL=https://localhost:$ARGOCD_PORT" >> argocd-connection.txt
+            echo "ARGOCD_USERNAME=admin" >> argocd-connection.txt
+            echo "ARGOCD_PASSWORD=$ARGOCD_PASSWORD" >> argocd-connection.txt
+            echo -e "${BLUE}💾 Connection info saved to 'argocd-connection.txt' file.${NC}"
             
             # Wait until script ends
             echo -e "${BLUE}⏳ Script continues running. Press Ctrl+C to stop...${NC}"
             wait
         else
             echo -e "\n${YELLOW}⚠️  Setup completed but ArgoCD login failed.${NC}"
-            echo -e "${BLUE}💡 You can try accessing ArgoCD manually at https://localhost:8081${NC}"
+            echo -e "${BLUE}💡 You can try accessing ArgoCD manually at https://localhost:$ARGOCD_PORT${NC}"
             echo -e "${BLUE}💡 Username: admin, Password: $ARGOCD_PASSWORD${NC}"
             echo -e "${BLUE}💡 Manual commands to complete setup:${NC}"
-            echo -e "${BLUE}  argocd login localhost:8081 --username admin --password $ARGOCD_PASSWORD --insecure --grpc-web${NC}"
+            echo -e "${BLUE}  argocd login localhost:$ARGOCD_PORT --username admin --password $ARGOCD_PASSWORD --insecure --grpc-web${NC}"
             echo -e "${BLUE}  argocd repo add https://github.com/mustafaUrl/Inception-of-Things${NC}"
             echo -e "${BLUE}  argocd app create my-app --repo https://github.com/mustafaUrl/Inception-of-Things --path p3/manifests --dest-server https://kubernetes.default.svc --dest-namespace default${NC}"
             echo -e "${BLUE}  argocd app sync my-app${NC}"
         fi
     else
         echo -e "\n${RED}❌ Setup failed due to port forwarding issues.${NC}"
-        echo -e "${BLUE}💡 Try running the script again or check if port 8081 is already in use.${NC}"
+        echo -e "${BLUE}💡 Try running the script again or check if ports are available.${NC}"
     fi
 }
 
