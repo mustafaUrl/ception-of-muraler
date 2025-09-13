@@ -182,6 +182,13 @@ setup_system() {
     check_requirements
     create_k3d_cluster
     install_argocd
+
+    log_info "ArgoCD resource.exclusions kaldırılıyor ve sunucu yeniden başlatılıyor..."
+    kubectl patch configmap argocd-cm -n argocd --type='json' -p='[{"op": "remove", "path": "/data/resource.exclusions"}]' 2>/dev/null || echo -e "${YELLOW}ℹ️  resource.exclusions zaten mevcut değil${NC}"
+    kubectl rollout restart deployment argocd-server -n argocd
+    kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+    log_success "ArgoCD sunucusu yeniden başlatıldı."
+
     create_dev_namespace
     get_argocd_password
     start_port_forward
