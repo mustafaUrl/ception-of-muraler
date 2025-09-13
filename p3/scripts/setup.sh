@@ -189,7 +189,16 @@ setup_system() {
     add_repository
     create_application
     sync_application
+
+    log_info "my-app-deployment'in hazır olması bekleniyor..."
+    kubectl wait --for=condition=available --timeout=300s deployment/my-app-deployment -n dev
+    log_success "my-app-deployment hazır."
+
+    log_info "Uygulama için port-forward başlatılıyor (8888 -> 80)..."
+    nohup kubectl port-forward svc/my-app-service -n dev 8888:80 > /dev/null 2>&1 &
+
     log_success "Kurulum tamamlandı! ArgoCD UI: https://localhost:$ARGOCD_PORT"
+    log_success "Uygulamanız artık http://localhost:8888 adresinde erişilebilir."
     log_warn "İlk admin şifreniz: $ARGOCD_PASSWORD"
     log_warn "Güvenliğiniz için lütfen ilk girişte şifrenizi değiştirin."
     wait
