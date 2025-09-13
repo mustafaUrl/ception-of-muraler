@@ -1,7 +1,7 @@
 #!/bin/bash
-# K3D Cluster ve ArgoCD Setup Script (Fail-Safe, Dev Namespace Destekli)
+# K3D Cluster ve ArgoCD Setup Script (lujiangz buff xd)
 
-set -e  # Hata olursa script duracak
+set -e
 
 # Renkler
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -28,23 +28,47 @@ check_requirements() {
         log_success "k3d kuruldu."
     fi
 
-    # kubectl kurulumu
+    # kubectl kurulumu (Ubuntu 24.04 fixli)
     if ! command -v kubectl &> /dev/null; then
         log_warn "kubectl bulunamadı. Kuruluyor..."
+
+        # Eski bozuk repo varsa temizle
+        sudo rm -f /etc/apt/sources.list.d/kubernetes.list
+        sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+        # Yeni repo ekle
         sudo apt-get update
-        sudo apt-get install -y apt-transport-https ca-certificates curl
-        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo apt-get install -y apt-transport-https ca-certificates curl gpg
+        sudo mkdir -p /etc/apt/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" \
+            | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
         sudo apt-get update
         sudo apt-get install -y kubectl
         log_success "kubectl kuruldu."
     fi
 
+    # Docker yetki kontrolü ve düzenlemesi
+    if ! docker info &> /dev/null; then
+        if [[ $(id -Gn "$USER" | grep -c "docker") -eq 0 ]]; then
+            log_warn "Docker daemon'a erişim yetkiniz yok. Kullanıcı '${USER}' docker grubuna ekleniyor..."
+            sudo usermod -aG docker "$USER"
+            log_success "Kullanıcı başarıyla docker grubuna eklendi."
+            log_error "Yetkilerin geçerli olması için lütfen terminali kapatıp yeniden açın ve script'i tekrar çalıştırın."
+        else
+            log_error "Docker daemon çalışmıyor veya başka bir sorun var. Lütfen docker servisini kontrol edin."
+        fi
+    fi
+
     # argocd CLI kurulumu
     if ! command -v argocd &> /dev/null; then
         log_warn "argocd CLI bulunamadı. Kuruluyor..."
-        VERSION=$(curl --silent "https://api.github.com/repos/argoproj/argo-cd/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-        sudo curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/$VERSION/argocd-linux-amd64
+        VERSION=$(curl --silent "https://api.github.com/repos/argoproj/argo-cd/releases/latest" \
+            | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+        sudo curl -sSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/download/$VERSION/argocd-linux-amd64
         sudo chmod +x /usr/local/bin/argocd
         log_success "argocd CLI kuruldu."
     fi
@@ -58,7 +82,8 @@ create_k3d_cluster() {
         log_warn "mycluster zaten var. Siliniyor..."
         k3d cluster delete mycluster
     fi
-    k3d cluster create mycluster --servers 1 --agents 1 -p "8080:80@loadbalancer" -p "8443:443@loadbalancer"
+    k3d cluster create mycluster --servers 1 --agents 1 \
+        -p "8080:80@loadbalancer" -p "8443:443@loadbalancer"
     log_success "K3D cluster oluşturuldu."
 }
 
@@ -66,7 +91,6 @@ install_argocd() {
     log_info "ArgoCD kuruluyor..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-    log_info "ArgoCD server pod hazır olana kadar bekleniyor..."
     kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
     log_success "ArgoCD kuruldu."
 }
@@ -167,7 +191,7 @@ setup_system() {
     sync_application
     log_success "Kurulum tamamlandı! ArgoCD UI: https://localhost:$ARGOCD_PORT"
     log_warn "İlk admin şifreniz: $ARGOCD_PASSWORD"
-    log_warn "Güvenliğiniz için lütfen ilk girişte şifrenizi değiştirmeyi unutmayın."
+    log_warn "Güvenliğiniz için lütfen ilk girişte şifrenizi değiştirin."
     wait
 }
 
