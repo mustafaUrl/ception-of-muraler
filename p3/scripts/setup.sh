@@ -19,10 +19,36 @@ log_warn()    { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error()   { echo -e "${RED}❌ $1${NC}"; exit 1; }
 
 check_requirements() {
-    log_info "Gerekli araçlar kontrol ediliyor..."
-    for cmd in k3d kubectl argocd; do
-        command -v $cmd >/dev/null 2>&1 || log_error "$cmd bulunamadı. Lütfen kurun."
-    done
+    log_info "Gerekli araçlar kontrol ediliyor ve kuruluyor..."
+
+    # k3d kurulumu
+    if ! command -v k3d &> /dev/null; then
+        log_warn "k3d bulunamadı. Kuruluyor..."
+        wget -q -O - https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+        log_success "k3d kuruldu."
+    fi
+
+    # kubectl kurulumu
+    if ! command -v kubectl &> /dev/null; then
+        log_warn "kubectl bulunamadı. Kuruluyor..."
+        sudo apt-get update
+        sudo apt-get install -y apt-transport-https ca-certificates curl
+        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo apt-get update
+        sudo apt-get install -y kubectl
+        log_success "kubectl kuruldu."
+    fi
+
+    # argocd CLI kurulumu
+    if ! command -v argocd &> /dev/null; then
+        log_warn "argocd CLI bulunamadı. Kuruluyor..."
+        VERSION=$(curl --silent "https://api.github.com/repos/argoproj/argo-cd/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+        sudo curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/$VERSION/argocd-linux-amd64
+        sudo chmod +x /usr/local/bin/argocd
+        log_success "argocd CLI kuruldu."
+    fi
+
     log_success "Tüm gereksinimler karşılandı."
 }
 
@@ -55,7 +81,6 @@ get_argocd_password() {
     log_info "ArgoCD admin şifresi alınıyor..."
     until kubectl -n argocd get secret argocd-initial-admin-secret >/dev/null 2>&1; do sleep 5; done
     ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-    # Şifreyi dosyaya kaydetme satırı kaldırıldı
     log_success "Admin şifresi başarıyla alındı."
 }
 
@@ -118,7 +143,6 @@ sync_application() {
 
 cleanup() {
     [[ -n "$PORT_FORWARD_PID" ]] && kill $PORT_FORWARD_PID 2>/dev/null
-    # Şifre dosyasını silme satırı artık gerekli değil
 }
 
 trap cleanup EXIT
@@ -126,7 +150,6 @@ trap cleanup EXIT
 reset_system() {
     pkill -f "kubectl port-forward.*argocd-server" || true
     k3d cluster delete mycluster || true
-    # Şifre dosyasını silme satırı artık gerekli değil
     rm -rf "$HOME/.argocd"
     log_success "Sistem sıfırlandı."
 }
