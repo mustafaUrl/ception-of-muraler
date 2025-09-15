@@ -7,7 +7,7 @@ metadata:
   labels:
     app: my-app
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: my-app
@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: my-app-container
-        image: wil42/playground:v1
+        image: wil42/playground:v2
         ports:
         - containerPort: 8888
         readinessProbe:                     
