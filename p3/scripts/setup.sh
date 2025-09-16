@@ -152,7 +152,8 @@ create_application() {
         --repo https://github.com/mustafaUrl/Inception-of-Things \
         --path p3/manifests \
         --dest-server https://kubernetes.default.svc \
-        --dest-namespace dev; then
+        --dest-namespace dev \
+        --sync-policy automated; then
         log_warn "Uygulama zaten var olabilir."
     else
         log_success "Uygulama oluşturuldu."
