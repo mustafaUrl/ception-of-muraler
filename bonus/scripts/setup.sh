@@ -92,6 +92,11 @@ create_k3d_cluster() {
         sudo k3d cluster delete mycluster
     fi
     sudo k3d cluster create mycluster --servers 1 --agents 1 -p "8080:80@loadbalancer" -p "8443:443@loadbalancer"
+    # Copy kubeconfig to vagrant user and set permissions
+    mkdir -p /home/vagrant/.kube
+    sudo cp /root/.kube/config /home/vagrant/.kube/config
+    sudo chown vagrant:vagrant /home/vagrant/.kube/config
+    chmod 600 /home/vagrant/.kube/config
     log_success "K3D cluster oluşturuldu."
 }
 
