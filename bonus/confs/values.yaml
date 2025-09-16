@@ -15,6 +15,10 @@ grafana:
   enabled: false
 jaeger:
   enabled: false
+minio:
+  enabled: false
+postgresql:
+  enabled: false
 
 # Reduce replica counts to save resources
 nginx-ingress:
@@ -34,7 +38,3 @@ gitlab:
 redis:
   master:
     replicaCount: 1
-postgresql:
-  replicaCount: 0
-minio:
-  replicas: 1
