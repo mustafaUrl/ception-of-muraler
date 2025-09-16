@@ -1,0 +1,40 @@
+global:
+  hosts:
+    domain: gitlab.127.0.0.1.nip.io
+  ingress:
+    configureCertmanager: false
+
+# Disable components we don't need for this bonus
+certmanager:
+  enabled: false
+gitlab-runner:
+  enabled: false
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+jaeger:
+  enabled: false
+
+# Reduce replica counts to save resources
+nginx-ingress:
+  controller:
+    replicaCount: 1
+    minAvailable: 1
+gitlab:
+  webservice:
+    minReplicas: 1
+    maxReplicas: 1
+  sidekiq:
+    minReplicas: 1
+    maxReplicas: 1
+  gitlab-shell:
+    minReplicas: 1
+    maxReplicas: 1
+redis:
+  master:
+    replicaCount: 1
+postgresql:
+  replicaCount: 0
+minio:
+  replicas: 1
