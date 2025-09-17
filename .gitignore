@@ -1,2 +1,3 @@
 .vagrant
 /p3/scripts/*.txt
+*.log
