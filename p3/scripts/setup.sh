@@ -1,42 +1,38 @@
 #!/bin/bash
-# K3D Cluster ve ArgoCD Setup Script (lujiangz buff xd)
 
 set -e
 
-# Renkler
+# Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 ARGOCD_PORT=""
 PORT_FORWARD_PID=""
 ARGOCD_PASSWORD=""
 
-# -----------------------------
-# Yardımcı Fonksiyonlar
-# -----------------------------
 log_info()    { echo -e "${BLUE}ℹ️  $1${NC}"; }
 log_success() { echo -e "${GREEN}✅ $1${NC}"; }
 log_warn()    { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error()   { echo -e "${RED}❌ $1${NC}"; exit 1; }
 
 check_requirements() {
-    log_info "Gerekli araçlar kontrol ediliyor ve kuruluyor..."
+    log_info "Checking and installing required tools..."
 
-    # k3d kurulumu
+    # k3d installation
     if ! command -v k3d &> /dev/null; then
-        log_warn "k3d bulunamadı. Kuruluyor..."
+        log_warn "k3d not found. Installing..."
         wget -q -O - https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-        log_success "k3d kuruldu."
+        log_success "k3d installed."
     fi
 
-    # kubectl kurulumu (Ubuntu 24.04 fixli)
+    # kubectl installation (Ubuntu 24.04 fixed)
     if ! command -v kubectl &> /dev/null; then
-        log_warn "kubectl bulunamadı. Kuruluyor..."
+        log_warn "kubectl not found. Installing..."
 
-        # Eski bozuk repo varsa temizle
+        # Clean up any broken repo
         sudo rm -f /etc/apt/sources.list.d/kubernetes.list
         sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-        # Yeni repo ekle
+        # Add new repo
         sudo apt-get update
         sudo apt-get install -y apt-transport-https ca-certificates curl gpg
         sudo mkdir -p /etc/apt/keyrings
@@ -47,65 +43,65 @@ check_requirements() {
 
         sudo apt-get update
         sudo apt-get install -y kubectl
-        log_success "kubectl kuruldu."
+        log_success "kubectl installed."
     fi
 
-    # Docker yetki kontrolü ve düzenlemesi
+    # Docker permission check and setup
     if ! docker info &> /dev/null; then
         if [[ $(id -Gn "$USER" | grep -c "docker") -eq 0 ]]; then
-            log_warn "Docker daemon'a erişim yetkiniz yok. Kullanıcı '${USER}' docker grubuna ekleniyor..."
+            log_warn "You don't have access to Docker daemon. Adding user '${USER}' to docker group..."
             sudo usermod -aG docker "$USER"
-            log_success "Kullanıcı başarıyla docker grubuna eklendi."
-            log_error "Yetkilerin geçerli olması için lütfen terminali kapatıp yeniden açın ve script'i tekrar çalıştırın."
+            log_success "User successfully added to docker group."
+            log_error "Please close the terminal and reopen it for permissions to take effect, then run the script again."
         else
-            log_error "Docker daemon çalışmıyor veya başka bir sorun var. Lütfen docker servisini kontrol edin."
+            log_error "Docker daemon is not running or there's another issue. Please check docker service."
         fi
     fi
 
-    # argocd CLI kurulumu
+    # argocd CLI installation
     if ! command -v argocd &> /dev/null; then
-        log_warn "argocd CLI bulunamadı. Kuruluyor..."
+        log_warn "argocd CLI not found. Installing..."
         VERSION=$(curl --silent "https://api.github.com/repos/argoproj/argo-cd/releases/latest" \
             | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
         sudo curl -sSL -o /usr/local/bin/argocd \
             https://github.com/argoproj/argo-cd/releases/download/$VERSION/argocd-linux-amd64
         sudo chmod +x /usr/local/bin/argocd
-        log_success "argocd CLI kuruldu."
+        log_success "argocd CLI installed."
     fi
 
-    log_success "Tüm gereksinimler karşılandı."
+    log_success "All requirements satisfied."
 }
 
 create_k3d_cluster() {
-    log_info "K3D cluster oluşturuluyor..."
+    log_info "Creating K3D cluster..."
     if k3d cluster list | grep -q "mycluster"; then
-        log_warn "mycluster zaten var. Siliniyor..."
+        log_warn "mycluster already exists. Deleting..."
         k3d cluster delete mycluster
     fi
     k3d cluster create mycluster --servers 1 --agents 1 \
         -p "8080:80@loadbalancer" -p "8443:443@loadbalancer"
-    log_success "K3D cluster oluşturuldu."
+    log_success "K3D cluster created."
 }
 
 install_argocd() {
-    log_info "ArgoCD kuruluyor..."
+    log_info "Installing ArgoCD..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
     kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
-    log_success "ArgoCD kuruldu."
+    log_success "ArgoCD installed."
 }
 
 create_dev_namespace() {
-    log_info "'dev' namespace oluşturuluyor..."
+    log_info "Creating 'dev' namespace..."
     kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
-    log_success "'dev' namespace oluşturuldu."
+    log_success "'dev' namespace created."
 }
 
 get_argocd_password() {
-    log_info "ArgoCD admin şifresi alınıyor..."
+    log_info "Getting ArgoCD admin password..."
     until kubectl -n argocd get secret argocd-initial-admin-secret >/dev/null 2>&1; do sleep 5; done
     ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-    log_success "Admin şifresi başarıyla alındı."
+    log_success "Admin password retrieved successfully."
 }
 
 find_available_port() {
@@ -113,57 +109,57 @@ find_available_port() {
     for port in $(seq $start $((start+50))); do
         ! lsof -i :$port >/dev/null 2>&1 && echo $port && return 0
     done
-    log_error "Boş port bulunamadı 8081-8131 arasında."
+    log_error "No available port found between 8081-8131."
 }
 
 start_port_forward() {
     ARGOCD_PORT=$(find_available_port 8081)
-    log_info "Port forwarding başlatılıyor... Port: $ARGOCD_PORT"
+    log_info "Starting port forwarding... Port: $ARGOCD_PORT"
     kubectl wait --for=condition=Ready --timeout=300s pod -l app.kubernetes.io/name=argocd-server -n argocd
     kubectl port-forward svc/argocd-server -n argocd $ARGOCD_PORT:443 >/dev/null 2>&1 &
     PORT_FORWARD_PID=$!
     sleep 3
     if ! kill -0 $PORT_FORWARD_PID >/dev/null 2>&1; then
-        log_error "Port forwarding başlatılamadı."
+        log_error "Could not start port forwarding."
     fi
-    log_success "Port forwarding başladı: https://localhost:$ARGOCD_PORT"
+    log_success "Port forwarding started: https://localhost:$ARGOCD_PORT"
 }
 
 login_argocd() {
-    log_info "ArgoCD'ye login oluyor..."
+    log_info "Logging into ArgoCD..."
     if ! argocd login localhost:$ARGOCD_PORT --username admin --password "$ARGOCD_PASSWORD" --insecure; then
-        log_error "ArgoCD login başarısız!"
+        log_error "ArgoCD login failed!"
     fi
-    log_success "ArgoCD login başarılı."
+    log_success "ArgoCD login successful."
 }
 
 add_repository() {
-    log_info "GitHub repository ekleniyor..."
+    log_info "Adding GitHub repository..."
     if ! argocd repo add https://github.com/mustafaUrl/Inception-of-Things; then
-        log_warn "Repo zaten ekli olabilir."
+        log_warn "Repository might already be added."
     else
-        log_success "Repo eklendi."
+        log_success "Repository added."
     fi
 }
 
 create_application() {
-    log_info "ArgoCD uygulaması oluşturuluyor..."
+    log_info "Creating ArgoCD application..."
     if ! argocd app create my-app \
         --repo https://github.com/mustafaUrl/Inception-of-Things \
         --path p3/manifests \
         --dest-server https://kubernetes.default.svc \
         --dest-namespace dev \
         --sync-policy automated; then
-        log_warn "Uygulama zaten var olabilir."
+        log_warn "Application might already exist."
     else
-        log_success "Uygulama oluşturuldu."
+        log_success "Application created."
     fi
 }
 
 sync_application() {
-    log_info "Uygulama sync ediliyor..."
+    log_info "Syncing application..."
     argocd app sync my-app
-    log_success "Uygulama sync edildi."
+    log_success "Application synced."
 }
 
 cleanup() {
@@ -176,7 +172,7 @@ reset_system() {
     pkill -f "kubectl port-forward.*argocd-server" || true
     k3d cluster delete mycluster || true
     rm -rf "$HOME/.argocd"
-    log_success "Sistem sıfırlandı."
+    log_success "System reset."
 }
 
 setup_system() {
@@ -184,11 +180,11 @@ setup_system() {
     create_k3d_cluster
     install_argocd
 
-    log_info "ArgoCD resource.exclusions kaldırılıyor ve sunucu yeniden başlatılıyor..."
-    kubectl patch configmap argocd-cm -n argocd --type='json' -p='[{"op": "remove", "path": "/data/resource.exclusions"}]' 2>/dev/null || echo -e "${YELLOW}ℹ️  resource.exclusions zaten mevcut değil${NC}"
+    log_info "Removing ArgoCD resource.exclusions and restarting server..."
+    kubectl patch configmap argocd-cm -n argocd --type='json' -p='[{"op": "remove", "path": "/data/resource.exclusions"}]' 2>/dev/null || echo -e "${YELLOW}ℹ️  resource.exclusions not present${NC}"
     kubectl rollout restart deployment argocd-server -n argocd
     kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
-    log_success "ArgoCD sunucusu yeniden başlatıldı."
+    log_success "ArgoCD server restarted."
 
     create_dev_namespace
     get_argocd_password
@@ -198,17 +194,17 @@ setup_system() {
     create_application
     sync_application
 
-    log_info "my-app-deployment'in hazır olması bekleniyor..."
+    log_info "Waiting for my-app-deployment to be ready..."
     kubectl wait --for=condition=available --timeout=300s deployment/my-app-deployment -n dev
-    log_success "my-app-deployment hazır."
+    log_success "my-app-deployment ready."
 
-    log_info "Uygulama için port-forward başlatılıyor (8888 -> 80)..."
+    log_info "Starting port-forward for application (8888 -> 80)..."
     nohup kubectl port-forward svc/my-app-service -n dev 8888:80 > /dev/null 2>&1 &
 
-    log_success "Kurulum tamamlandı! ArgoCD UI: https://localhost:$ARGOCD_PORT"
-    log_success "Uygulamanız artık http://localhost:8888 adresinde erişilebilir."
-    log_warn "İlk admin şifreniz: $ARGOCD_PASSWORD"
-    log_warn "Güvenliğiniz için lütfen ilk girişte şifrenizi değiştirin."
+    log_success "Setup completed! ArgoCD UI: https://localhost:$ARGOCD_PORT"
+    log_success "Your application is now accessible at http://localhost:8888."
+    log_warn "Your initial admin password: $ARGOCD_PASSWORD"
+    log_warn "For security, please change your password on first login."
     wait
 }
 
@@ -216,8 +212,8 @@ main() {
     case "${1:-setup}" in
         setup|-s|--setup) setup_system ;;
         reset|-r|--reset) reset_system ;;
-        help|-h|--help) echo "Kullanım: $0 [setup|reset|help]" ;;
-        *) log_error "Bilinmeyen seçenek: $1" ;;
+        help|-h|--help) echo "Usage: $0 [setup|reset|help]" ;;
+        *) log_error "Unknown option: $1" ;;
     esac
 }
 
