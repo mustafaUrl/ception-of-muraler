@@ -1,20 +1,64 @@
+SERVER_IP = "192.168.56.110"
+SERVER_HOSTNAME = "muralerS"
+IMAGE = "ubuntu/bionic64"
+IMAGE_VERSION = "20230607.0.5"
+
+MEMORY = "12288"
+CPUS = 6
+
 Vagrant.configure("2") do |config|
-  config.vm.box = "ubuntu/bionic64"
+  config.vm.box = IMAGE
+  config.vm.box_version = IMAGE_VERSION
+  config.vm.synced_folder ".", "/vagrant"
 
   config.vm.provider "virtualbox" do |vb|
-    vb.memory = "6144"
-    vb.cpus = "4"
+    vb.memory = MEMORY
+    vb.cpus = CPUS
+    
+    # VirtualBox specific optimizations for K8s/Docker workloads
+    vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+    vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+    vb.customize ["modifyvm", :id, "--ioapic", "on"]
+    vb.customize ["modifyvm", :id, "--paravirtprovider", "kvm"]
+    
+    # Enable nested virtualization (if supported by your hardware)
+    vb.customize ["modifyvm", :id, "--nested-hw-virt", "on"]
   end
 
-  # Forward ports needed for GitLab, ArgoCD, and the application
-  config.vm.network "forwarded_port", guest: 8080, host: 8080 # k3d loadbalancer for HTTP
-  config.vm.network "forwarded_port", guest: 8443, host: 8443 # k3d loadbalancer for HTTPS
-  config.vm.network "forwarded_port", guest: 8888, host: 8888 # my-app service
-  config.vm.network "forwarded_port", guest: 8081, host: 8081 # Potential ArgoCD port
-  config.vm.network "forwarded_port", guest: 8082, host: 8082 # Potential ArgoCD port
-  config.vm.network "forwarded_port", guest: 8083, host: 8083 # Potential ArgoCD port
+  # Master node
+  config.vm.define SERVER_HOSTNAME do |server|
+    server.vm.hostname = SERVER_HOSTNAME
+    server.vm.network "private_network", ip: SERVER_IP
+    
+    # Port forwarding for services
+    # ArgoCD HTTPS
+    server.vm.network "forwarded_port", guest: 8080, host: 8080, protocol: "tcp"
+    # GitLab HTTP  
+    server.vm.network "forwarded_port", guest: 9081, host: 9081, protocol: "tcp"
+    # ArgoCD HTTPS (alternative)
+    server.vm.network "forwarded_port", guest: 8443, host: 8443, protocol: "tcp"
+    # GitLab SSH (for git operations)
+    server.vm.network "forwarded_port", guest: 30022, host: 2222, protocol: "tcp"
+    # K3D LoadBalancer HTTP
+    server.vm.network "forwarded_port", guest: 80, host: 8000, protocol: "tcp"
+    # K3D LoadBalancer HTTPS
+    server.vm.network "forwarded_port", guest: 443, host: 8001, protocol: "tcp"
 
-  # Run the main setup script
-  config.vm.provision "shell", path: "scripts/setup.sh"
-
+    # Increase SSH timeout for slow operations
+    server.ssh.connect_timeout = 60
+    server.ssh.keep_alive = true
+    
+    # Run the setup script with proper error handling
+    server.vm.provision "shell", 
+      path: "./scripts/test_setup.sh",
+      privileged: false,
+      env: {
+        "DEBIAN_FRONTEND" => "noninteractive"
+      }
+      
+    # Ensure .local/bin is in PATH for future sessions
+    server.vm.provision "shell",
+      inline: "echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> /home/vagrant/.bashrc",
+      privileged: false
+  end
 end
