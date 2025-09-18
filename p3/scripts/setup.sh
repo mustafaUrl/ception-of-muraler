@@ -156,7 +156,7 @@ login_argocd() {
 
 add_repository() {
     log_info "Adding GitHub repository..."
-    if ! argocd repo add https://github.com/mustafaUrl/Inception-of-Things; then
+    if ! argocd repo add https://github.com/mustafaUrl/ception-of-muraler; then
         log_warn "Repository might already be added."
     else
         log_success "Repository added."
@@ -166,7 +166,7 @@ add_repository() {
 create_application() {
     log_info "Creating ArgoCD application..."
     if ! argocd app create my-app \
-        --repo https://github.com/mustafaUrl/Inception-of-Things \
+        --repo https://github.com/mustafaUrl/ception-of-muraler \
         --path p3/manifests \
         --dest-server https://kubernetes.default.svc \
         --dest-namespace dev \
