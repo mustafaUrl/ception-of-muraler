@@ -188,13 +188,13 @@ sync_application() {
 start_app_port_forward() {
     log_info "Starting port-forward for application (8888 -> 80)..."
     
-    # Eski port-forward'ları temizle
+    # Clear old port forwards
     pkill -f "kubectl port-forward.*my-app-service" 2>/dev/null || true
     
-    # Deployment'ın hazır olmasını bekle
+    # Wait for the deployment to be ready
     kubectl wait --for=condition=available --timeout=300s deployment/my-app-deployment -n dev
     
-    # Port forwarding başlat
+    # Start port forwarding
     kubectl port-forward svc/my-app-service -n dev 8888:80 >/dev/null 2>&1 &
     APP_PORT_FORWARD_PID=$!
     
@@ -212,23 +212,23 @@ monitor_pod_changes() {
     local last_pod_name=""
     
     while true; do
-        # Mevcut pod adını al
+        # Take the current pod name
         current_pod=$(kubectl get pods -n dev -l app=my-app --no-headers 2>/dev/null | awk '{print $1}' | head -1)
         
         if [[ -n "$current_pod" && "$current_pod" != "$last_pod_name" ]]; then
             if [[ -n "$last_pod_name" ]]; then
                 log_warn "Pod changed from '$last_pod_name' to '$current_pod'. Restarting port forwarding..."
                 
-                # Eski port forward'ı öldür
+                # Kill the old port forwarding
                 if [[ -n "$APP_PORT_FORWARD_PID" ]]; then
                     kill $APP_PORT_FORWARD_PID 2>/dev/null || true
                 fi
                 pkill -f "kubectl port-forward.*my-app-service" 2>/dev/null || true
                 
-                # Yeni pod'un hazır olmasını bekle
+                # Wait for the new pod to be ready
                 kubectl wait --for=condition=Ready --timeout=60s pod/$current_pod -n dev 2>/dev/null || true
                 
-                # Port forwarding'i yeniden başlat
+                # Restart port forwarding
                 start_app_port_forward
             fi
             last_pod_name="$current_pod"
@@ -284,7 +284,7 @@ setup_system() {
     kubectl wait --for=condition=available --timeout=300s deployment/my-app-deployment -n dev
     log_success "my-app-deployment ready."
 
-    # İlk port forwarding'i başlat
+    # Start the first port forwarding
     start_app_port_forward
     
     log_success "Setup completed! ArgoCD UI: https://localhost:$ARGOCD_PORT"
@@ -292,7 +292,7 @@ setup_system() {
     log_warn "Your initial admin password: $ARGOCD_PASSWORD"
     log_warn "For security, please change your password on first login."
     
-    # Pod değişikliklerini izlemeye başla
+    # Start monitoring pod changes
     log_info "Monitoring pod changes for automatic port forwarding restart..."
     monitor_pod_changes &
     
