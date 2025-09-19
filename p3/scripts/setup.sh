@@ -7,6 +7,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC
 
 ARGOCD_PORT=""
 PORT_FORWARD_PID=""
+APP_PORT_FORWARD_PID=""
 ARGOCD_PASSWORD=""
 
 log_info()    { echo -e "${BLUE}ℹ️  $1${NC}"; }
@@ -183,14 +184,78 @@ sync_application() {
     log_success "Application synced."
 }
 
+# Application port forwarding fonksiyonları
+start_app_port_forward() {
+    log_info "Starting port-forward for application (8888 -> 80)..."
+    
+    # Eski port-forward'ları temizle
+    pkill -f "kubectl port-forward.*my-app-service" 2>/dev/null || true
+    
+    # Deployment'ın hazır olmasını bekle
+    kubectl wait --for=condition=available --timeout=300s deployment/my-app-deployment -n dev
+    
+    # Port forwarding başlat
+    kubectl port-forward svc/my-app-service -n dev 8888:80 >/dev/null 2>&1 &
+    APP_PORT_FORWARD_PID=$!
+    
+    sleep 3
+    
+    if kill -0 $APP_PORT_FORWARD_PID >/dev/null 2>&1; then
+        log_success "Application port forwarding started: http://localhost:8888"
+    else
+        log_error "Could not start application port forwarding."
+    fi
+}
+
+monitor_pod_changes() {
+    log_info "Starting pod change monitor..."
+    local last_pod_name=""
+    
+    while true; do
+        # Mevcut pod adını al
+        current_pod=$(kubectl get pods -n dev -l app=my-app --no-headers 2>/dev/null | awk '{print $1}' | head -1)
+        
+        if [[ -n "$current_pod" && "$current_pod" != "$last_pod_name" ]]; then
+            if [[ -n "$last_pod_name" ]]; then
+                log_warn "Pod changed from '$last_pod_name' to '$current_pod'. Restarting port forwarding..."
+                
+                # Eski port forward'ı öldür
+                if [[ -n "$APP_PORT_FORWARD_PID" ]]; then
+                    kill $APP_PORT_FORWARD_PID 2>/dev/null || true
+                fi
+                pkill -f "kubectl port-forward.*my-app-service" 2>/dev/null || true
+                
+                # Yeni pod'un hazır olmasını bekle
+                kubectl wait --for=condition=Ready --timeout=60s pod/$current_pod -n dev 2>/dev/null || true
+                
+                # Port forwarding'i yeniden başlat
+                start_app_port_forward
+            fi
+            last_pod_name="$current_pod"
+        fi
+        
+        sleep 5
+    done
+}
+
+restart_port_forward() {
+    log_info "Restarting application port forwarding..."
+    pkill -f "kubectl port-forward.*my-app-service" 2>/dev/null || true
+    sleep 2
+    start_app_port_forward
+}
+
 cleanup() {
     [[ -n "$PORT_FORWARD_PID" ]] && kill $PORT_FORWARD_PID 2>/dev/null
+    [[ -n "$APP_PORT_FORWARD_PID" ]] && kill $APP_PORT_FORWARD_PID 2>/dev/null
+    pkill -f "kubectl port-forward.*my-app-service" 2>/dev/null || true
 }
 
 trap cleanup EXIT
 
 reset_system() {
     pkill -f "kubectl port-forward.*argocd-server" || true
+    pkill -f "kubectl port-forward.*my-app-service" || true
     k3d cluster delete mycluster || true
     rm -rf "$HOME/.argocd"
     log_success "System reset."
@@ -219,13 +284,18 @@ setup_system() {
     kubectl wait --for=condition=available --timeout=300s deployment/my-app-deployment -n dev
     log_success "my-app-deployment ready."
 
-    log_info "Starting port-forward for application (8888 -> 80)..."
-    nohup kubectl port-forward svc/my-app-service -n dev 8888:80 > /dev/null 2>&1 &
-
+    # İlk port forwarding'i başlat
+    start_app_port_forward
+    
     log_success "Setup completed! ArgoCD UI: https://localhost:$ARGOCD_PORT"
     log_success "Your application is now accessible at http://localhost:8888."
     log_warn "Your initial admin password: $ARGOCD_PASSWORD"
     log_warn "For security, please change your password on first login."
+    
+    # Pod değişikliklerini izlemeye başla
+    log_info "Monitoring pod changes for automatic port forwarding restart..."
+    monitor_pod_changes &
+    
     wait
 }
 
@@ -233,7 +303,13 @@ main() {
     case "${1:-setup}" in
         setup|-s|--setup) setup_system ;;
         reset|-r|--reset) reset_system ;;
-        help|-h|--help) echo "Usage: $0 [setup|reset|help]" ;;
+        restart-port|-rp|--restart-port) restart_port_forward ;;
+        help|-h|--help) 
+            echo "Usage: $0 [setup|reset|restart-port|help]"
+            echo "  setup: Full system setup"
+            echo "  reset: Reset the entire system"
+            echo "  restart-port: Restart application port forwarding"
+            ;;
         *) log_error "Unknown option: $1" ;;
     esac
 }
