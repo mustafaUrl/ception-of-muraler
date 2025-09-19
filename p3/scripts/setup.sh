@@ -249,16 +249,19 @@ setup_system() {
     kubectl wait --for=condition=available --timeout=300s deployment/${DEPLOYMENT_NAME} -n ${NAMESPACE}
     log_success "${SERVICE_NAME} deployment ready."
 
-    log_info "Starting port-forward with kubefwd for ${SERVICE_NAME}..."
-    # kubefwd requires root/sudo to update /etc/hosts file.
-    nohup sudo -E kubefwd svc -n dev my-app-service 8888:80 > /dev/null 2>&1 &
+
 
     log_success "Setup completed! ArgoCD UI: https://localhost:$ARGOCD_PORT"
     log_success "Your application is now accessible at http://localhost:8888."
     log_warn "Your initial admin password: $ARGOCD_PASSWORD"
     log_warn "For security, please change your password on first login."
     
-    wait
+    while true; do
+        echo "Port forwarding başlatılıyor..."
+        kubectl port-forward svc/my-app-service -n dev 8888:80
+        echo "Bağlantı kesildi, 5 saniye sonra yeniden denenecek..."
+        sleep 5
+    done
 }
 
 main() {
