@@ -13,7 +13,7 @@ spec:
         app: app-one
     spec:
       containers:
-      - name: nginx
+      - name: hello-muraler
         image: paulbouwer/hello-kubernetes:1.5
         ports:
         - containerPort: 8080
@@ -33,7 +33,7 @@ spec:
         app: app-two
     spec:
       containers:
-      - name: nginx
+      - name: hello-msevuk
         image: paulbouwer/hello-kubernetes:1.5
         ports:
         - containerPort: 8080
@@ -53,7 +53,7 @@ spec:
         app: app-three
     spec:
       containers:
-      - name: nginx
+      - name: hello-bbosnak
         image: paulbouwer/hello-kubernetes:1.5
         ports:
         - containerPort: 8080

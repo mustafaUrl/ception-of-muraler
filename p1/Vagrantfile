@@ -4,8 +4,8 @@ WORKER_IP = "192.168.56.111"
 SERVER_HOSTNAME = "muralerS"
 WORKER_HOSTNAME = "muralerSW"
 
-IMAGE = "ubuntu/bionic64"
-IMAGE_VERSION = "20230607.0.5"
+IMAGE = "ubuntu/jammy64"
+IMAGE_VERSION = "20241002.0.0"
 
 MEMORY = "2048"
 CPUS = 2
