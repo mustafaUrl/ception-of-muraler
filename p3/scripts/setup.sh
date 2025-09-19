@@ -8,7 +8,9 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC
 ARGOCD_PORT=""
 PORT_FORWARD_PID=""
 ARGOCD_PASSWORD=""
-
+NAMESPACE="dev"
+SERVICE_NAME="my-app-service"
+DEPLOYMENT_NAME="my-app-deployment"
 log_info()    { echo -e "${BLUE}ℹ️  $1${NC}"; }
 log_success() { echo -e "${GREEN}✅ $1${NC}"; }
 log_warn()    { echo -e "${YELLOW}⚠️  $1${NC}"; }
@@ -89,6 +91,33 @@ check_requirements() {
         sudo chmod +x /usr/local/bin/argocd
         log_success "argocd CLI installed."
     fi
+
+    if ! [ -x "$(command -v kubefwd)" ]; then
+        echo "kubefwd bulunamadı. İndiriliyor ve kuruluyor..."
+        
+        # Check if wget is available
+        if ! [ -x "$(command -v wget)" ]; then
+            echo "wget bulunamadı. Lütfen önce wget'i kurun (örneğin: sudo apt-get install wget)"
+            exit 1
+        fi
+
+        # Download kubefwd
+        wget "https://github.com/txn2/kubefwd/releases/download/1.22.0/kubefwd_linux_x86_64.tar.gz" -O /tmp/kubefwd.tar.gz
+
+        # Extract the tar.gz file
+        tar -xvzf /tmp/kubefwd.tar.gz -C /tmp
+
+        # Move the binary to a PATH directory
+        sudo mv /tmp/kubefwd /usr/local/bin/
+
+        # Clean up
+        rm /tmp/kubefwd.tar.gz
+        
+        echo "kubefwd başarıyla kuruldu."
+    else
+        echo "kubefwd zaten kurulu."
+    fi
+
 
     log_success "All requirements satisfied."
 }
@@ -215,17 +244,20 @@ setup_system() {
     create_application
     sync_application
 
-    log_info "Waiting for my-app-deployment to be ready..."
-    kubectl wait --for=condition=available --timeout=300s deployment/my-app-deployment -n dev
-    log_success "my-app-deployment ready."
+        
+    log_info "Waiting for ${DEPLOYMENT_NAME} to be ready..."
+    kubectl wait --for=condition=available --timeout=300s deployment/${DEPLOYMENT_NAME} -n ${NAMESPACE}
+    log_success "${SERVICE_NAME} deployment ready."
 
-    log_info "Starting port-forward for application (8888 -> 80)..."
-    nohup kubectl port-forward svc/my-app-service -n dev 8888:80 > /dev/null 2>&1 &
+    log_info "Starting port-forward with kubefwd for ${SERVICE_NAME}..."
+    # kubefwd requires root/sudo to update /etc/hosts file.
+    nohup sudo -E kubefwd svc -n dev my-app-service 8888:80 > /dev/null 2>&1 &
 
     log_success "Setup completed! ArgoCD UI: https://localhost:$ARGOCD_PORT"
     log_success "Your application is now accessible at http://localhost:8888."
     log_warn "Your initial admin password: $ARGOCD_PASSWORD"
     log_warn "For security, please change your password on first login."
+    
     wait
 }
 
